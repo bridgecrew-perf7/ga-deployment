@@ -42,7 +42,7 @@ jobs:
     steps:
     - id: variables
       name: Variables
-      uses: actions/github-script@v4
+      uses: actions/github-script@v5
       with:
         debug: true
         github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
@@ -93,13 +93,13 @@ jobs:
         (github.event_name == 'pull_request' && (github.event.action == 'synchronize' || github.event.action == 'opened')) 
       env:
         LABEL: ${{ steps.variables.outputs.target-environment-name }}
-      uses: actions/github-script@v4
+      uses: actions/github-script@v5
       with:
         debug: true
         github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
         result-encoding: string
         script: |
-          github.issues.addLabels({
+          github.rest.issues.addLabels({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -134,48 +134,44 @@ jobs:
     steps:
     - id: inactivate-deployment
       name: Inactivate deployment
-      uses: actions/github-script@v4
-      env:
-        CUSTOM_GITHUB_TOKEN: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
+      uses: actions/github-script@v5
       with:
         debug: true
         github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
         result-encoding: string
+        previews: "ant-man"
         script: |
           const { CUSTOM_GITHUB_TOKEN, SFCC_TARGET_ENVIRONMENT } = process.env;
           console.log(`SFCC_TARGET_ENVIRONMENT: ${SFCC_TARGET_ENVIRONMENT}`);
 
-          const response = await github.request('GET /repos/{owner}/{repo}/deployments', {
+          const deployments = await github.rest.repos.listDeployments({
             owner: context.repo.owner,
             repo: context.repo.repo
           });
-          const { data } = response;
-          const deployment = data.filter(d => d.environment === SFCC_TARGET_ENVIRONMENT).sort((a, b) => a.created_at > b.created_at)[0];
-          const deployment_id = deployment ? deployment.id : null;
 
-          if (deployment_id !== null) {            
-            const res = await github.repos.createDeploymentStatus({
-              ...context.repo,
-              deployment_id,
-              state: 'inactive',
-              required_contexts: [],
-              mediaType: {
-                previews: ['ant-man']
-              }
+          const deployment = deployments
+            .filter(deployment => deployment.environment === SFCC_TARGET_ENVIRONMENT)[0]
+            .sort((a, b) => a.created_at > b.created_at)[0];
+          core.info(`deployment: ${deployment}`);
+
+          if (deployment && 'id' in deployment) {
+            github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.id,
+              state: 'inactive'
             });
-
-            console.log(res);
           }
 
     - id: remove-label
       name: Remove label
-      uses: actions/github-script@v4
+      uses: actions/github-script@v5
       with:
         debug: true
         github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
         result-encoding: string
         script: |
-          github.issues.removeLabel({
+          github.rest.issues.removeLabel({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
